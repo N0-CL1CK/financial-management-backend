@@ -26,8 +26,7 @@ class AuthController:
 
     def signin(self):
         try:
-            data = request.json
-
+            data = request.form
             UserLoginSchema().load(data)
 
             email: str = data.get('email')
@@ -45,10 +44,10 @@ class AuthController:
             if user.verify_password(password):
                 access_token = create_access_token(identity=user.uuid)
                 refresh_token = create_refresh_token(identity=user.uuid)
-                response = make_response({ 'message': 'Usuário autenticado com sucesso!' })
+                response = make_response({ 'message': 'Usuário autenticado com sucesso!' }, 201)
                 response.set_cookie('access_token', access_token, httponly=True)
                 response.set_cookie('refresh_token', refresh_token, httponly=True)
-                return response, 201
+                return response
             else:
                 return jsonify({ 'message': 'E-mail e/ou senha inválido(a)' }), 400
         
@@ -107,20 +106,22 @@ class AuthController:
 
             user = User().get_user_by_email(email)
 
-            if user and user.code_expires and user.code_expires > datetime.now():
-                time_left = int((user.code_expires-datetime.now()).total_seconds())
-                return jsonify({ 'message': f'Aguarde {time_left} segundos para poder enviar novamente' }), 429
+            if user:
+                if user.code_expires and user.code_expires > datetime.now():
+                    time_left = int((user.code_expires-datetime.now()).total_seconds())
+                    return jsonify({ 'message': f'Aguarde {time_left} segundos para poder enviar novamente' }), 429
 
-            code = str(uuid())[:6]
-
-            mail = MailSender(email, code)
+                code = str(uuid())[:6]
+                mail = MailSender(email, code)
             
-            if mail.send():
-                User().update_access_code(email, code)
-                
-                return jsonify({ 'message': f'Um código com duração de 60s foi enviado para {email}' }), 200
+                if mail.send():
+                    User().update_access_code(email, code)
+                    
+                    return jsonify({ 'message': f'Um código com duração de 60 segundos foi enviado para {email}' }), 200
+                else:
+                    return jsonify({ 'message': f'Ocorreu um erro interno, entre em contato com o suporte' }), 500
             else:
-                return jsonify({ 'message': f'Ocorreu um erro interno, entre em contato com o suporte' }), 500
+                return jsonify({ 'message': f'Não foi possível enviar o código' }), 400
 
         except ValidationError as err:
             message = { 'message': list(err.messages.values())[0][0] }
